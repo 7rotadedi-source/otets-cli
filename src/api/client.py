@@ -4,66 +4,74 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-class ItdSDKError(Exception):
+class OtetsAPIError(Exception):
     pass
 
-class ItdUser:
-    def __init__(self, username, base_url):
-        self.username = username
-        self.base_url = base_url
+class OtetsClient:
+    def __init__(self):
+        self.base_url = os.getenv('OTETS_BASE_URL', 'https://xn--d1ah4a.com')
+        self.username = os.getenv('OTETS_USERNAME', 'fau1t')
         self.session = requests.Session()
-        
-        # ВАЖНО: Вставь сюда реальное значение куки из браузера для теста
-        # Или используй переменную окружения OTETS_COOKIE
-        cookie_val = os.getenv('_ym_uid', '1778517092803469350')
         
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
             'Referer': f'{self.base_url}/@{self.username}',
         })
-        
-        if cookie_val:
-            # Предполагаем, что кука называется access_token. Проверь название в браузере!
-            self.session.cookies.set('access_token', cookie_val) 
 
-    def get_posts(self, limit=20, sort='new'):
+    def get_posts(self, page=1, limit=20):
         url = f"{self.base_url}/api/posts/user/{self.username}"
-        try:
-            resp = self.session.get(url, params={'limit': limit, 'sort': sort}, timeout=10)
-            
-            # Если все еще 401, значит имя куки неверное или нужен Header Authorization
-            if resp.status_code == 401:
-                raise ItdSDKError("Ошибка 401: Требуется авторизация. Проверь OTETS_COOKIE в .env")
-                
-            resp.raise_for_status()
-            data = resp.json()
-            
-            posts = data if isinstance(data, list) else data.get('data', [])
-            return [self._normalize_post(p) for p in posts]
-        except Exception as e:
-            raise ItdSDKError(f"SDK Error: {e}")
-
-    def _normalize_post(self, raw_post):
-        import re
-        from html import unescape
         
-        content = raw_post.get('content', raw_post.get('body', raw_post.get('text', '')))
-        if isinstance(content, str):
-            content = re.sub('<[^<]+?>', '', unescape(content))
-            
-        return {
-            'id': raw_post.get('id'),
-            'title': raw_post.get('title', 'Без темы')[:60],
-            'body': content[:1000],
-            'link': f"{self.base_url}/@{self.username}/post/{raw_post.get('id')}",
-            'date': raw_post.get('createdAt', '')
+        params = {
+            'limit': limit,
+            'sort': 'new',
         }
 
-class ItdPlatform:
-    def __init__(self, base_url=None, username=None):
-        self.base_url = base_url or os.getenv('OTETS_BASE_URL', 'https://xn--d1ah4a.com')
-        self.username = username or os.getenv('OTETS_USERNAME', 'fau1t')
-    
-    def get_user(self):
-        return ItdUser(self.username, self.base_url)
+        try:
+            response = self.session.get(url, params=params, timeout=10)
+            
+            # Обработка ошибки 401 (Unauthorized)
+            if response.status_code == 401:
+                raise OtetsAPIError("Ошибка 401: Требуется авторизация. Проверьте токен или куки.")
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            posts_list = []
+            if isinstance(data, list):
+                posts_list = data
+            elif isinstance(data, dict) and 'data' in data:
+                posts_list = data['data']
+            else:
+                posts_list = [data] if data else []
+
+            formatted_posts = []
+            for p in posts_list:
+                post_id = p.get('id', 'unknown')
+                title = p.get('title', 'Без заголовка')
+                content = p.get('content', p.get('body', p.get('text', '')))
+                
+                # Очистка от HTML тегов
+                clean_content = content
+                if isinstance(content, str) and '<' in content:
+                    from html import unescape
+                    import re
+                    clean_content = re.sub('<[^<]+?>', '', unescape(content))
+
+                formatted_posts.append({
+                    'id': post_id,
+                    'title': title[:60] if title else f"Пост #{str(post_id)[:8]}",
+                    'body': clean_content[:1000],
+                    'link': f"{self.base_url}/@{self.username}/post/{post_id}",
+                    'created_at': p.get('createdAt', p.get('created_at', ''))
+                })
+                
+            return formatted_posts
+
+        except requests.exceptions.HTTPError as e:
+            raise OtetsAPIError(f"Ошибка API: {e}")
+        except Exception as e:
+            raise OtetsAPIError(f"Ошибка соединения: {e}")
+
+    def search_posts(self, query):
+        return []
