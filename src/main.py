@@ -1,57 +1,63 @@
+#!/usr/bin/env python3
+"""
+Отец CLI - клиент для чтения постов прямо из терминала
+"""
+
 import sys
-from api.client import OtetsClient, OtetsAPIError
-from ui.printer import print_post, print_error, print_help
-from utils.config import get_limit
+import os
+from dotenv import load_dotenv
+from rich.console import Console
+
+from api.client import OtetsAPI
+from ui.display import TerminalUI
+from utils.errors import OtetsError
+
+# Загружаем переменные окружения
+load_dotenv()
+
+console = Console()
+
 
 def main():
-    # Инициализация клиента
+    """Главная точка входа"""
     try:
-        client = OtetsClient()
+        # Проверяем конфигурацию
+        base_url = os.getenv("OTETS_BASE_URL", "https://xn--d1ah4a.com")
+        username = os.getenv("OTETS_USERNAME", "")
+        
+        if not username:
+            console.print(
+                "[bold red]❌ Ошибка:[/bold red] Не установлена переменная OTETS_USERNAME",
+                highlight=False
+            )
+            console.print(
+                "[yellow]Скопируй .env.example в .env и заполни данные[/yellow]",
+                highlight=False
+            )
+            sys.exit(1)
+        
+        # Инициализируем API
+        api = OtetsAPI(base_url=base_url, username=username)
+        
+        # Инициализируем UI
+        ui = TerminalUI(api)
+        
+        # Запускаем интерактивный режим
+        ui.run()
+        
+    except OtetsError as e:
+        console.print(f"[bold red]❌ Ошибка ИТД:[/bold red] {e}", highlight=False)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]⏹️  Выход[/yellow]", highlight=False)
+        sys.exit(0)
     except Exception as e:
-        print_error(f"Ошибка инициализации: {e}")
-        return
+        console.print(
+            f"[bold red]❌ Неожиданная ошибка:[/bold red] {e}",
+            highlight=False
+        )
+        sys.exit(1)
 
-    limit = get_limit()
-    current_page = 1
 
-    print(f"[bold green]Otets CLI v1.0[/bold green]")
-    print_help()
-
-    while True:
-        try:
-            # Получаем посты через API клиент
-            posts = client.get_posts(page=current_page, limit=limit)
-            
-            if not posts:
-                print_error("Лента пуста или нет доступа.")
-                break
-
-            for post in posts:
-                print_post(post)
-
-            command = input("\nКоманда (n/p/q): ").strip().lower()
-
-            if command == 'q':
-                print("Выход...")
-                break
-            elif command == 'n':
-                current_page += 1
-            elif command == 'p':
-                if current_page > 1:
-                    current_page -= 1
-                else:
-                    print_error("Это первая страница.")
-            else:
-                print_error("Неизвестная команда.")
-
-        except OtetsAPIError as e:
-            print_error(str(e))
-            break
-        except KeyboardInterrupt:
-            print("\nВыход...")
-            break
-        except EOFError:
-            break
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
