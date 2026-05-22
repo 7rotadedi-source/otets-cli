@@ -1,33 +1,35 @@
 import sys
-import argparse
 from api.client import OtetsClient, OtetsAPIError
 from ui.printer import print_post, print_error, print_help
 from utils.config import get_limit
 
 def main():
-    parser = argparse.ArgumentParser(description="CLI клиент для ИТД")
-    parser.add_argument('--limit', type=int, default=get_limit(), help='Количество постов')
-    args = parser.parse_args()
+    # Инициализация клиента
+    try:
+        client = OtetsClient()
+    except Exception as e:
+        print_error(f"Ошибка инициализации: {e}")
+        return
 
-    client = OtetsClient()
+    limit = get_limit()
     current_page = 1
-    limit = args.limit
 
-    print(f"[bold green]Подключение к ИТД...[/bold green]")
+    print(f"[bold green]Otets CLI v1.0[/bold green]")
     print_help()
 
     while True:
         try:
+            # Получаем посты через API клиент
             posts = client.get_posts(page=current_page, limit=limit)
             
             if not posts:
-                print_error("Посты не найдены.")
+                print_error("Лента пуста или нет доступа.")
                 break
 
             for post in posts:
                 print_post(post)
 
-            command = input("Команда (n/p/q): ").strip().lower()
+            command = input("\nКоманда (n/p/q): ").strip().lower()
 
             if command == 'q':
                 print("Выход...")
