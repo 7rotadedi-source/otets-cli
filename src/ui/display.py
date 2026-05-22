@@ -1,249 +1,311 @@
+# -*- coding: utf-8 -*-
 """
-Терминальный интерфейс для отображения постов
+Терминальный UI для Отец CLI
+
+Красивый вывод постов и навигация
 """
 
-from typing import List, Optional
+import sys
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.table import Table
-from rich.align import Align
-from rich.prompt import Prompt
+from rich.markdown import Markdown
+from rich.spinner import Spinner
+from rich.live import Live
+import time
 
-from api.client import OtetsAPI, Post
-from utils.errors import NetworkError, OtetsError
+from src.api.client import OtetsAPIClient
+from src.utils.errors import OtetsError
+from src.utils.parsers import format_timestamp, format_number
 
 
 class TerminalUI:
-    """Интерактивный UI для терминала"""
+    """
+    Интерактивный терминальный интерфейс
+    """
     
-    def __init__(self, api: OtetsAPI):
-        self.api = api
-        self.console = Console()
-        self.posts: List[Post] = []
-        self.current_page = 0
-        self.posts_per_page = 5
-        self.username = api.username
+    def __init__(self, api: OtetsAPIClient):
+        """
+        Инициализация UI
         
+        Args:
+            api: API клиент
+        """
+        self.api = api
+        self.console = Console(force_terminal=True, record=False)
+        
+        self.current_page = 0
+        self.posts = []
+        self.all_posts = []
+        self.search_query = None
+        self.search_results = []
+        
+        # Размер страницы
+        self.page_size = self.api.limit
+        
+        # Флаг для выхода
+        self.running = True
+    
     def run(self):
-        """Запустить интерактивный режим"""
+        """
+        Главный цикл приложения
+        """
         self._show_welcome()
         
-        while True:
-            try:
-                # Загружаем посты если нужно
-                if not self.posts:
-                    self._load_posts()
-                
-                # Показываем текущую страницу
-                self._display_page()
-                
-                # Ждем команду от пользователя
-                command = self._get_command()
-                
-                if not self._handle_command(command):
-                    break
-                    
-            except KeyboardInterrupt:
-                break
-            except NetworkError as e:
-                self.console.print(
-                    f"[bold red]❌ Ошибка сети:[/bold red] {e}",
-                    highlight=False
-                )
-                if not self._retry_prompt():
-                    break
-            except OtetsError as e:
-                self.console.print(
-                    f"[bold red]❌ Ошибка:[/bold red] {e}",
-                    highlight=False
-                )
-                break
+        # Загружаем посты
+        self._load_posts()
+        
+        # Основной цикл
+        while self.running:
+            self._display_posts()
+            self._handle_input()
     
     def _show_welcome(self):
-        """Показать приветствие"""
-        title = Text("🎭 Отец CLI", style="bold cyan", justify="center")
-        subtitle = Text(f"Читаем посты {self.username}", style="dim yellow")
-        
-        welcome_text = f"""
-[bold cyan]Постоянное присутствие[/bold cyan] философии в твоем терминале
+        """
+        Показать приветственный экран
+        """
+        welcome_text = """
+🧠 [bold cyan]Отец CLI[/bold cyan] — терминал философии
 
-[yellow]Команды:[/yellow]
-  [green]n[/green] - следующая страница
-  [green]p[/green] - предыдущая страница
-  [green]s[/green] - поиск по ключевому слову
-  [green]r[/green] - перезагрузить посты
-  [green]q[/green] - выход
-
-[dim]Используй стрелки вверх/вниз для навигации (при поддержке терминала)[/dim]
-"""
+[yellow]Читаем посты из мудрости прямо в терминал[/yellow]
+        """
         
-        panel = Panel(
-            welcome_text,
-            title=title,
-            subtitle=subtitle,
-            border_style="cyan",
-            padding=(1, 2)
+        self.console.print(welcome_text)
+        self.console.print(
+            Panel(
+                "[cyan]Загружаю фонды мудрости...[/cyan]",
+                style="bold blue",
+                expand=False
+            )
         )
-        self.console.print(panel)
     
     def _load_posts(self):
-        """Загрузить посты с API"""
-        with self.console.status("[bold cyan]⏳ Загружаем посты...", spinner="dots"):
-            self.posts = self.api.get_profile_posts(
-                username=self.username,
-                limit=50  # Загружаем сразу побольше для пагинации
-            )
+        """
+        Загрузить посты из API
+        """
+        try:
+            # Показываем спиннер загрузки
+            with self.console.status(
+                "[bold cyan]⏳ Загружаю посты мудрости...[/bold cyan]",
+                spinner="dots"
+            ):
+                self.all_posts = self.api.get_user_posts(limit=100)
+                self.posts = self.all_posts[:self.page_size]
         
-        if not self.posts:
+        except OtetsError as e:
             self.console.print(
-                "[yellow]⚠️  П��стов не найдено[/yellow]",
-                highlight=False
+                f"[bold red]❌ Ошибка: {e}[/bold red]"
             )
-        else:
-            self.console.print(
-                f"[green]✓ Загружено {len(self.posts)} постов[/green]",
-                highlight=False
-            )
+            # Используем фейковые посты при ошибке
+            self.all_posts = self.api.get_user_posts(limit=100)
+            self.posts = self.all_posts[:self.page_size]
     
-    def _display_page(self):
-        """Показать текущую страницу постов"""
-        if not self.posts:
-            return
-        
-        # Вычисляем границы текущей страницы
-        start = self.current_page * self.posts_per_page
-        end = start + self.posts_per_page
-        page_posts = self.posts[start:end]
-        
-        # Если страница пустая, возвращаемся на первую
-        if not page_posts and self.current_page > 0:
-            self.current_page = 0
-            self._display_page()
-            return
-        
-        # Очищаем экран и показываем посты
+    def _display_posts(self):
+        """
+        Показать текущие посты
+        """
         self.console.clear()
+        self._show_welcome()
         
-        # Заголовок
-        total_pages = (len(self.posts) + self.posts_per_page - 1) // self.posts_per_page
-        header = Text(
-            f"Посты {self.username} (стр. {self.current_page + 1}/{total_pages})",
-            style="bold cyan"
+        if not self.posts:
+            self.console.print(
+                Panel(
+                    "[yellow]Постов не найдено[/yellow]",
+                    style="bold red",
+                    title="⚠️  Информация"
+                )
+            )
+            return
+        
+        # Показываем заголовок
+        if self.search_query:
+            title = f"🔍 Результаты поиска: '{self.search_query}'"
+        else:
+            title = f"📖 Фонды мудрости Отца"
+        
+        self.console.print(
+            f"\n[bold cyan]{title}[/bold cyan]"
         )
-        self.console.print(header)
-        self.console.print("[dim]" + "─" * 80 + "[/dim]")
         
-        # Показываем посты
-        for i, post in enumerate(page_posts, 1):
+        # Показываем каждый пост
+        for i, post in enumerate(self.posts, 1):
             self._display_post(post, i)
-            
-        self.console.print("[dim]" + "─" * 80 + "[/dim]")
         
-        # Пагинация
-        nav_text = f"[dim]← P[/dim] | [bold cyan]Стр. {self.current_page + 1}/{total_pages}[/bold cyan] | [dim]N →[/dim]"
-        self.console.print(Align.center(nav_text))
+        # Показываем информацию о пагинации
+        self._show_pagination_info()
     
-    def _display_post(self, post: Post, index: int):
-        """Показать один пост с красивым форматированием"""
-        # Заголовок поста
-        author_text = Text(f"{post.author}", style="bold yellow")
-        timestamp_text = Text(post.timestamp, style="dim")
+    def _display_post(
+        self,
+        post: Dict[str, Any],
+        index: int
+    ):
+        """
+        Показать отдельный пост
+        """
+        # Извлекаем данные
+        post_id = post.get('id', 'N/A')
+        text = post.get('text', post.get('content', ''))
+        created_at = post.get('created_at', '')
+        likes = post.get('likes', 0)
         
-        header = f"{index}. {author_text} {timestamp_text}"
+        # Форматируем текст
+        if isinstance(text, str):
+            text = text.strip()[:500]  # Ограничиваем длину
+        else:
+            text = str(text)
         
-        # Контент
-        content = post.content
-        if len(content) > 200:
-            content = content[:197] + "..."
+        # Форматируем дату
+        timestamp = format_timestamp(created_at) if created_at else "недавно"
         
-        # Статистика
-        stats = f"💬 {post.replies} | ❤️ {post.likes}"
+        # Форматируем лайки
+        likes_str = format_number(likes) if likes else "0"
         
-        # Собираем панель
-        panel_content = f"""
-{content}
+        # Создаем содержимое поста
+        content = f"""
+[bold]{text}[/bold]
 
-[dim]{stats}[/dim]
-"""
+[dim]{timestamp}  |  ❤️  {likes_str}[/dim]
+        """
         
+        # Показываем в панели
         panel = Panel(
-            panel_content,
-            title=header,
-            border_style="blue",
-            padding=(0, 1)
+            content.strip(),
+            title=f"Пост #{post_id}",
+            title_align="left",
+            border_style="cyan" if index % 2 == 0 else "magenta",
+            expand=True
         )
+        
         self.console.print(panel)
     
-    def _get_command(self) -> str:
-        """Получить команду от пользователя"""
-        try:
-            cmd = Prompt.ask(
-                "[cyan]Команда[/cyan]",
-                choices=["n", "p", "s", "r", "q"],
-                show_choices=False
-            ).lower().strip()
-            return cmd
-        except:
-            return "q"
+    def _show_pagination_info(self):
+        """
+        Показать информацию о пагинации и командах
+        """
+        page_num = self.current_page + 1
+        total_pages = (len(self.all_posts) + self.page_size - 1) // self.page_size
+        
+        info_text = f"""
+[bold cyan]═══════════════════════════════════════[/bold cyan]
+[dim]Страница {page_num} из {total_pages}  |  Всего постов: {len(self.all_posts)}[/dim]
+
+[bold]Команды:[/bold]
+  [cyan]n[/cyan] — следующая страница
+  [cyan]p[/cyan] — предыдущая страница
+  [cyan]s[/cyan] — поиск по ключевому слову
+  [cyan]r[/cyan] — перезагрузить
+  [cyan]q[/cyan] — выход
+[bold cyan]═══════════════════════════════════════[/bold cyan]
+        """
+        
+        self.console.print(info_text)
     
-    def _handle_command(self, command: str) -> bool:
+    def _handle_input(self):
+        """
+        Обработать ввод пользователя
+        """
+        try:
+            command = input("\n[bold yellow]➜[/bold yellow]  ").strip().lower()
+            self._process_command(command)
+        except EOFError:
+            # При Ctrl+D выходим
+            self.running = False
+    
+    def _process_command(self, command: str):
         """
         Обработать команду пользователя
-        
-        Returns:
-            False если нужно выйти, True если продолжать
         """
-        if command == "q":
-            self.console.print("[yellow]⏹️  Спасибо за внимание![/yellow]")
-            return False
-            
-        elif command == "n":
-            # Следующая страница
-            total_pages = (len(self.posts) + self.posts_per_page - 1) // self.posts_per_page
-            if self.current_page < total_pages - 1:
-                self.current_page += 1
-            else:
-                self.console.print("[yellow]⚠️  Вы в конце списка[/yellow]")
-            return True
-            
-        elif command == "p":
-            # Предыдущая страница
-            if self.current_page > 0:
-                self.current_page -= 1
-            else:
-                self.console.print("[yellow]⚠️  Вы в начале списка[/yellow]")
-            return True
-            
-        elif command == "s":
-            # Поиск
-            query = Prompt.ask("[cyan]Введите поисковый запрос[/cyan]")
-            if query:
-                with self.console.status("[bold cyan]🔍 Ищем...", spinner="dots"):
-                    try:
-                        self.posts = self.api.search_posts(query, limit=50)
-                        self.current_page = 0
-                        if not self.posts:
-                            self.console.print("[yellow]Ничего не найдено[/yellow]")
-                        else:
-                            self.console.print(f"[green]✓ Найдено {len(self.posts)} постов[/green]")
-                    except Exception as e:
-                        self.console.print(f"[red]Ошибка поиска: {e}[/red]")
-            return True
-            
-        elif command == "r":
-            # Перезагрузить
-            self.posts = []
-            self.current_page = 0
-            return True
-        
-        return True
+        if command == 'n':
+            self._next_page()
+        elif command == 'p':
+            self._prev_page()
+        elif command == 's':
+            self._search()
+        elif command == 'r':
+            self._reload()
+        elif command == 'q':
+            self.running = False
+            self.console.print(
+                "\n[bold cyan]✨ Спасибо за внимание к фондам мудрости![/bold cyan]\n"
+            )
+        else:
+            # Игнорируем неизвестные команды
+            pass
     
-    def _retry_prompt(self) -> bool:
-        """Спросить, повторить ли попытку"""
-        retry = Prompt.ask(
-            "[yellow]Повторить попытку?[/yellow]",
-            choices=["y", "n"],
-            default="y"
-        ).lower()
-        return retry == "y"
+    def _next_page(self):
+        """
+        Перейти на следующую страницу
+        """
+        max_pages = (len(self.all_posts) + self.page_size - 1) // self.page_size
+        
+        if self.current_page + 1 < max_pages:
+            self.current_page += 1
+            start = self.current_page * self.page_size
+            end = start + self.page_size
+            self.posts = self.all_posts[start:end]
+        else:
+            self.console.print(
+                "[yellow]⚠️  Вы на последней странице[/yellow]"
+            )
+            time.sleep(1)
+    
+    def _prev_page(self):
+        """
+        Перейти на предыдущую страницу
+        """
+        if self.current_page > 0:
+            self.current_page -= 1
+            start = self.current_page * self.page_size
+            end = start + self.page_size
+            self.posts = self.all_posts[start:end]
+        else:
+            self.console.print(
+                "[yellow]⚠️  Вы на первой странице[/yellow]"
+            )
+            time.sleep(1)
+    
+    def _search(self):
+        """
+        Поиск по ключевому слову
+        """
+        try:
+            query = input(
+                "\n[bold cyan]🔍 Введите поисковый запрос:[/bold cyan]  "
+            ).strip()
+            
+            if not query:
+                return
+            
+            self.console.print(
+                "[cyan]Ищу посты...[/cyan]"
+            )
+            
+            self.search_query = query
+            self.search_results = self.api.search_posts(query)
+            
+            if self.search_results:
+                self.posts = self.search_results
+                self.current_page = 0
+            else:
+                self.console.print(
+                    f"[yellow]Постов с '{query}' не найдено[/yellow]"
+                )
+                time.sleep(2)
+        
+        except KeyboardInterrupt:
+            pass
+    
+    def _reload(self):
+        """
+        Перезагрузить посты
+        """
+        self.console.print(
+            "[cyan]Перезагружаю посты...[/cyan]"
+        )
+        self.current_page = 0
+        self.search_query = None
+        self.search_results = []
+        self._load_posts()

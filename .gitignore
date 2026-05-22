@@ -1,7 +1,70 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-.env
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+PIPFILE.lock
+
+# Виртуальное окружение
 venv/
-.venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Окружение
+.env
+.env.local
+.env.*.local
+
+# Логи
+*.log
+*.log.*
+
+# Кэш
+.cache/
+.pytest_cache/
+.mypy_cache/
+.tox/
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+
+# Прочее
+*.o
+*.a
+*.so
+.DS_Store
+Thumbs.db

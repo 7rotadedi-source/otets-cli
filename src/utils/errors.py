@@ -1,23 +1,46 @@
+# -*- coding: utf-8 -*-
 """
-Пользовательские исключения для обработки ошибок
+Пользовательские исключения для Отец CLI
 """
 
 
 class OtetsError(Exception):
-    """Базовое исключение для ошибок ИТД"""
+    """
+    Базовое исключение для всех ошибок приложения
+    """
     pass
 
 
 class NetworkError(OtetsError):
-    """Ошибка сетевого соединения"""
+    """
+    Ошибка при работе с сетью
+    """
     pass
 
 
-class APIError(OtetsError):
-    """Ошибка API"""
+class NotFoundError(OtetsError):
+    """
+    Ресурс не найден
+    """
     pass
 
 
-class ConfigError(OtetsError):
-    """Ошибка конфигурации"""
+class ServerError(OtetsError):
+    """
+    Ошибка на стороне сервера
+    """
+    pass
+
+
+class ValidationError(OtetsError):
+    """
+    Ошибка валидации данных
+    """
+    pass
+
+
+class ConfigurationError(OtetsError):
+    """
+    Ошибка конфигурации
+    """
     pass

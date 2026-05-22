@@ -1,43 +1,31 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Отец CLI - клиент для чтения постов прямо из терминала
+Отец CLI - главная точка входа
+
+Развивает философию через терминал
 """
 
 import sys
 import os
-from dotenv import load_dotenv
-from rich.console import Console
+from pathlib import Path
 
-from api.client import OtetsAPI
-from ui.display import TerminalUI
-from utils.errors import OtetsError
+# Добавляем корневую папку в PATH для импортов
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Загружаем переменные окружения
-load_dotenv()
-
-console = Console()
+from src.api.client import OtetsAPIClient
+from src.ui.display import TerminalUI
+from src.utils.errors import OtetsError
+import traceback
 
 
 def main():
-    """Главная точка входа"""
+    """
+    Главная функция приложения
+    """
     try:
-        # Проверяем конфигурацию
-        base_url = os.getenv("OTETS_BASE_URL", "https://xn--d1ah4a.com")
-        username = os.getenv("OTETS_USERNAME", "")
-        
-        if not username:
-            console.print(
-                "[bold red]❌ Ошибка:[/bold red] Не установлена переменная OTETS_USERNAME",
-                highlight=False
-            )
-            console.print(
-                "[yellow]Скопируй .env.example в .env и заполни данные[/yellow]",
-                highlight=False
-            )
-            sys.exit(1)
-        
-        # Инициализируем API
-        api = OtetsAPI(base_url=base_url, username=username)
+        # Инициализируем API клиент
+        api = OtetsAPIClient()
         
         # Инициализируем UI
         ui = TerminalUI(api)
@@ -46,18 +34,18 @@ def main():
         ui.run()
         
     except OtetsError as e:
-        console.print(f"[bold red]❌ Ошибка ИТД:[/bold red] {e}", highlight=False)
-        sys.exit(1)
+        print(f"\n❌ Ошибка Отца: {e}")
+        return 1
     except KeyboardInterrupt:
-        console.print("\n[yellow]⏹️  Выход[/yellow]", highlight=False)
-        sys.exit(0)
+        print("\n\n👋 Выход из фондов Отца...")
+        return 0
     except Exception as e:
-        console.print(
-            f"[bold red]❌ Неожиданная ошибка:[/bold red] {e}",
-            highlight=False
-        )
-        sys.exit(1)
+        print(f"\n💥 Неожиданная ошибка: {e}")
+        traceback.print_exc()
+        return 2
+    
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

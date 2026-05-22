@@ -1,33 +1,118 @@
+# -*- coding: utf-8 -*-
 """
-Парсеры для обработки текста и контента
+Парсеры и форматеры для Отец CLI
 """
 
-import re
-from typing import List
+from datetime import datetime
+from typing import Optional
 
 
-def clean_html(text: str) -> str:
-    """Удалить HTML теги из текста"""
-    clean = re.compile('<.*?>')
-    return re.sub(clean, '', text)
+def format_timestamp(timestamp: Optional[str]) -> str:
+    """
+    Форматирует временную метку в читаемый формат
+    
+    Args:
+        timestamp: ISO 8601 строка или объект datetime
+    
+    Returns:
+        Отформатированная строка
+    """
+    if not timestamp:
+        return "неизвестно"
+    
+    try:
+        # Парсим ISO 8601 формат
+        if isinstance(timestamp, str):
+            # Удаляем суффикс Z если есть
+            if timestamp.endswith('Z'):
+                timestamp = timestamp[:-1]
+            
+            dt = datetime.fromisoformat(timestamp)
+        else:
+            dt = timestamp
+        
+        # Форматируем
+        now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+        diff = now - dt
+        
+        # Разные диапазоны времени
+        if diff.total_seconds() < 60:
+            return "только что"
+        elif diff.total_seconds() < 3600:
+            minutes = int(diff.total_seconds() / 60)
+            return f"{minutes}м назад"
+        elif diff.total_seconds() < 86400:
+            hours = int(diff.total_seconds() / 3600)
+            return f"{hours}ч назад"
+        elif diff.total_seconds() < 604800:
+            days = int(diff.total_seconds() / 86400)
+            return f"{days}д назад"
+        else:
+            return dt.strftime("%d.%m.%Y")
+    
+    except Exception:
+        return str(timestamp)[:10]
 
 
-def truncate_text(text: str, max_length: int = 200) -> str:
-    """Обрезать текст до максимальной длины"""
-    if len(text) > max_length:
-        return text[:max_length - 3] + "..."
-    return text
+def format_number(number: int) -> str:
+    """
+    Форматирует число в сокращенный вид
+    
+    Args:
+        number: число для форматирования
+    
+    Returns:
+        Отформатированная строка
+    """
+    if number < 1000:
+        return str(number)
+    elif number < 1000000:
+        return f"{number / 1000:.1f}K".rstrip('0').rstrip('.')
+    else:
+        return f"{number / 1000000:.1f}M".rstrip('0').rstrip('.')
 
 
-def extract_urls(text: str) -> List[str]:
-    """Извлечь URL из текста"""
-    url_pattern = r'https?://[^\s]+'
-    return re.findall(url_pattern, text)
+def truncate_text(text: str, length: int = 100) -> str:
+    """
+    Обрезает текст до определенной длины
+    
+    Args:
+        text: текст для обрезания
+        length: максимальная длина
+    
+    Returns:
+        Обрезанный текст
+    """
+    if len(text) <= length:
+        return text
+    return text[:length-3] + "..."
 
 
-def format_timestamp(timestamp: str) -> str:
-    """Форматировать временную метку"""
-    # Простая форматирование, можно расширить
-    if isinstance(timestamp, str) and len(timestamp) > 10:
-        return timestamp[:10]  # Показываем только дату
-    return timestamp
+def extract_hashtags(text: str) -> list:
+    """
+    Извлекает хэштеги из текста
+    
+    Args:
+        text: текст для поиска
+    
+    Returns:
+        Список найденных хэштегов
+    """
+    import re
+    pattern = r'#\w+'
+    return re.findall(pattern, text)
+
+
+def extract_mentions(text: str) -> list:
+    """
+    Извлекает упоминания из текста
+    
+    Args:
+        text: текст для поиска
+    
+    Returns:
+        Список найденных упоминаний
+    """
+    import re
+    pattern = r'@\w+'
+    return re.findall(pattern, text)
